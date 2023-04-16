@@ -36,5 +36,5 @@ jobs:
           --platform=linux/amd64,linux/arm/v7,linux/arm64 \
           --output "type=image,push=true" \
           --file ./Dockerfile . \
-          --tag $(echo "${username}" | tr '[:upper:]' '[:lower:]')/$chatgpt-proxy-v4:latest \
-          --tag $(echo "${username}" | tr '[:upper:]' '[:lower:]')/$chatgpt-proxy-v4:${TAG}
+          --tag $(echo "${username}" | tr '[:upper:]' '[:lower:]')/chatgpt-proxy-v4:latest \
+          --tag $(echo "${username}" | tr '[:upper:]' '[:lower:]')/chatgpt-proxy-v4:${TAG}
