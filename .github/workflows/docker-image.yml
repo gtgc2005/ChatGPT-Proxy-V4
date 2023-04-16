@@ -28,6 +28,8 @@ jobs:
         uses: crazy-max/ghaction-docker-buildx@v1
         with:
           buildx-version: latest
+      - name: Lowercase the repo name
+        run: echo "REPO=${GITHUB_REPOSITORY,,}"
       - name: Build Dockerfile
         env:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -36,5 +38,5 @@ jobs:
           --platform=linux/amd64,linux/arm/v7,linux/arm64 \
           --output "type=image,push=true" \
           --file ./Dockerfile . \
-          --tag $(echo "${username}" | tr '[:upper:]' '[:lower:]')/${{ lowercase.github.event.repository.name }}:latest \
-          --tag $(echo "${username}" | tr '[:upper:]' '[:lower:]')/${{ lowercase.github.event.repository.name }}:${TAG}
+          --tag $(echo "${username}" | tr '[:upper:]' '[:lower:]')/${{ REPO }}:latest \
+          --tag $(echo "${username}" | tr '[:upper:]' '[:lower:]')/${{ REPO }}:${TAG}
