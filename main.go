@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"log"
 
 	http "github.com/bogdanfinn/fhttp"
 	tls_client "github.com/bogdanfinn/tls-client"
@@ -19,18 +20,12 @@ var (
 		tls_client.WithNotFollowRedirects(),
 		tls_client.WithCookieJar(jar), // create cookieJar instance and pass it as argument
 	}
-	client, _    = tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
-	admin_pass   = os.Getenv("ADMIN_PASS")
-	cf_clearance = os.Getenv("CF_CLEARANCE")
-	http_proxy   = os.Getenv("http_proxy")
+	client, _  = tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
+	user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+	http_proxy = os.Getenv("http_proxy")
 )
 
 func main() {
-	if cf_clearance == "" {
-		println("CF_CLEARANCE not set")
-		os.Exit(1)
-	}
-	println(cf_clearance)
 
 	if http_proxy != "" {
 		client.SetProxy(http_proxy)
@@ -39,7 +34,7 @@ func main() {
 
 	PORT := os.Getenv("PORT")
 	if PORT == "" {
-		PORT = "8080"
+		PORT = "9090"
 	}
 	handler := gin.Default()
 	handler.GET("/ping", func(c *gin.Context) {
@@ -48,27 +43,6 @@ func main() {
 
 	handler.Any("/api/*path", proxy)
 
-	handler.POST("/admin/update", func(c *gin.Context) {
-		if c.Request.Header.Get("Authorization") != admin_pass {
-			c.JSON(401, gin.H{"message": "unauthorized"})
-			return
-		}
-		type Update struct {
-			Value string `json:"value"`
-			Field string `json:"field"`
-		}
-		var update Update
-		c.BindJSON(&update)
-		if update.Field == "cf_clearance" {
-			cf_clearance = update.Value
-			// export environment variable
-			os.Setenv("CF_CLEARANCE", cf_clearance)
-		} else {
-			c.JSON(400, gin.H{"message": "invalid field"})
-			return
-		}
-		c.JSON(200, gin.H{"message": "updated"})
-	})
 	gin.SetMode(gin.ReleaseMode)
 	endless.ListenAndServe(os.Getenv("HOST")+":"+PORT, handler)
 }
@@ -106,14 +80,7 @@ func proxy(c *gin.Context) {
 	request.Header.Set("sec-fetch-mode", "cors")
 	request.Header.Set("sec-fetch-site", "same-origin")
 	request.Header.Set("sec-gpc", "1")
-	request.Header.Set("user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36")
-
-	request.AddCookie(
-		&http.Cookie{
-			Name:  "cf_clearance",
-			Value: cf_clearance,
-		},
-	)
+	request.Header.Set("user-agent", user_agent)
 
 	response, err = client.Do(request)
 	if err != nil {
@@ -124,10 +91,24 @@ func proxy(c *gin.Context) {
 	c.Header("Content-Type", response.Header.Get("Content-Type"))
 	// Get status code
 	c.Status(response.StatusCode)
-	c.Stream(func(w io.Writer) bool {
-		// Write data to client
-		io.Copy(w, response.Body)
-		return false
-	})
 
+	buf := make([]byte, 4096)
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			_, writeErr := c.Writer.Write(buf[:n])
+			if writeErr != nil {
+				log.Printf("Error writing to client: %v", writeErr)
+				break
+			}
+			c.Writer.Flush() // flush buffer to make sure the data is sent to client in time.
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Printf("Error reading from response body: %v", err)
+			break
+		}
+	}
 }
